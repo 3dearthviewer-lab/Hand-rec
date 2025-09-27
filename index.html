@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hand Detection (Mobile-Friendly)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 10px;
+            background: #f0f0f0;
+        }
+        #container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        #video {
+            border: 2px solid black;
+            width: 100%;
+            background: black;
+        }
+        #canvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            border: 2px solid red;
+            width: 100%;
+            pointer-events: none;
+        }
+        #status {
+            margin: 10px;
+            font-weight: bold;
+            color: blue;
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 16px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .fullscreen-btn {
+            background: #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hand Detection (Mobile)</h1>
+    <div id="status">Loading model...</div>
+    <div id="container">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    <button id="restartBtn">Restart Camera</button>
+    <button id="fullscreenBtn" class="fullscreen-btn">Fullscreen</button>
+
+    <!-- Load TensorFlow.js and HandPose model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.0/dist/hand-pose-detection.js"></script>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
+        const restartBtn = document.getElementById('restartBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+        let model, detector;
+        let isDetecting = false;
+
+        // Load model
+        async function loadModel() {
+            status.textContent = "Loading model (please wait)...";
+            await tf.ready();
+            model = handpose.SupportedModels.MediaPipeHands;
+            detector = await handpose.createDetector(model, {
+                runtime: 'tfjs',
+                modelType: 'lite', // Lite model for mobile
+                maxHands: 1
+            });
+            status.textContent = "Model loaded! Starting camera...";
+            startCamera();
+        }
+
+        // Start camera
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 480 },
+                        height: { ideal: 640 }
+                    }
+                });
+                video.srcObject = stream;
+                status.textContent = "Camera started. Show your hand!";
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                isDetecting = true;
+                detectHands();
+            } catch (err) {
+                status.textContent = `Error: ${err.message}`;
+                isDetecting = false;
+            }
+        }
+
+        // Detect hands and draw square
+        async function detectHands() {
+            if (!isDetecting) return;
+            requestAnimationFrame(detectHands);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const hands = await detector.estimateHands(video);
+
+            if (hands.length > 0) {
+                const landmarks = hands[0].landmarks;
+                const minX = Math.min(...landmarks.map(lm => lm.x)) * canvas.width;
+                const minY = Math.min(...landmarks.map(lm => lm.y)) * canvas.height;
+                const maxX = Math.max(...landmarks.map(lm => lm.x)) * canvas.width;
+                const maxY = Math.max(...landmarks.map(lm => lm.y)) * canvas.height;
+
+                ctx.strokeStyle = "red";
+                ctx.lineWidth = 3;
+                ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+            }
+        }
+
+        // Restart camera
+        restartBtn.addEventListener('click', () => {
+            isDetecting = false;
+            const stream = video.srcObject;
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            setTimeout(() => {
+                isDetecting = true;
+                startCamera();
+            }, 500);
+        });
+
+        // Fullscreen mode
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    status.textContent = `Fullscreen error: ${err.message}`;
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        // Load model when page loads
+        loadModel();
+
+        // Handle mobile back button
+        window.addEventListener('popstate', () => {
+            isDetecting = false;
+        });
+    </script>
+</body>
+</html>
